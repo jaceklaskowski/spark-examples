@@ -13,27 +13,51 @@ object StreamStreamJoinDemo extends App {
   val options = Map(
     "kafka.bootstrap.servers" -> ":9092"
   )
-  val left = spark
-    .readStream
-    .format("kafka")
-    .options(options)
-    .option("subscribe", "demo.stream-stream-join.left")
-    .load
-    .select(
-      $"key" cast "string",
-      $"value" cast "string")
-  val right = spark
-    .readStream
-    .format("kafka")
-    .options(options)
-    .option("subscribe", "demo.stream-stream-join.right")
-    .load
-    .select(
-      $"key" cast "string",
-      $"value" cast "string")
 
-  val joined = left.join(right)
-    .where(left("key") === right("key"))
+  val customers = spark
+    .readStream
+    .format("kafka")
+    .options(options)
+    .option("subscribe", "demo.stream-stream-join.customers")
+    .load
+    .select(
+      $"key" cast "string" cast "long" as "id",
+      $"value" cast "string" as "name")
+
+  // root
+  // |-- id: long (nullable = true)
+  // |-- name: string (nullable = true)
+
+  import org.apache.spark.sql.types._
+  val valueSchema = StructType(Seq(
+    StructField("customer_id", LongType),
+    StructField("total", DoubleType))
+  )
+  import org.apache.spark.sql.functions.from_json
+  val id = $"key" cast "string" as "id"
+  val customer_total = from_json($"value" cast "string", valueSchema)
+
+  val transactions = spark
+    .readStream
+    .format("kafka")
+    .options(options)
+    .option("subscribe", "demo.stream-stream-join.transactions")
+    .load
+    .withColumn("customer_total", customer_total)
+    .select(id, $"customer_total.*")
+
+  // root
+  // |-- id: string (nullable = true)
+  // |-- customer_id: long (nullable = true)
+  // |-- total: double (nullable = true)
+
+  val joined = transactions
+    .join(customers)
+    .where(transactions("customer_id") === customers("id"))
+    .select(
+      transactions("id") as "txn_id",
+      customers("name"),
+      transactions("total"))
 
   import java.time.Clock
   val timeOffset = Clock.systemUTC.instant.getEpochSecond
@@ -42,7 +66,8 @@ object StreamStreamJoinDemo extends App {
 
   import org.apache.spark.sql.streaming.Trigger
   import scala.concurrent.duration._
-  val sq = joined.writeStream
+  val sq = joined
+    .writeStream
     .format("console")
     .option("checkpointLocation", checkpointLocation)
     .queryName(queryName)
@@ -50,6 +75,7 @@ object StreamStreamJoinDemo extends App {
     .start
 
   println(s">>> [$appName] Started")
+  println(s">>> [$appName] You should soon see Batch: 0 in the console")
 
   sq.awaitTermination()
 }
