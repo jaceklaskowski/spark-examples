@@ -1,4 +1,5 @@
 name := "spark-examples"
+organization := "pl.japila.spark"
 
 version := "1.0.0-SNAPSHOT"
 
