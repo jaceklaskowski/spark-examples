@@ -3,12 +3,17 @@ package pl.japila.spark.sql.streaming
 object StreamStreamJoinDemo extends App {
 
   val appName = "Demo: Stream-Stream Join"
-  println(s">>> [$appName] Starting up...")
+  print(s">>> [$appName] Starting up...")
 
   import org.apache.spark.sql.SparkSession
   val spark = SparkSession.builder().master("local[*]").getOrCreate()
 
   import spark.implicits._
+
+  val numShufflePartitions = 1
+  import org.apache.spark.sql.internal.SQLConf.SHUFFLE_PARTITIONS
+  spark.sessionState.conf.setConf(SHUFFLE_PARTITIONS, numShufflePartitions)
+  assert(spark.sessionState.conf.numShufflePartitions == numShufflePartitions)
 
   val options = Map(
     "kafka.bootstrap.servers" -> ":9092"
@@ -55,8 +60,7 @@ object StreamStreamJoinDemo extends App {
     .join(customers)
     .where(transactions("customer_id") === customers("id"))
     .select(
-      transactions("id") as "txn_id",
-      customers("name"),
+      customers("name") as "customer_name",
       transactions("total"))
 
   import java.time.Clock
@@ -74,7 +78,7 @@ object StreamStreamJoinDemo extends App {
     .trigger(Trigger.ProcessingTime(1.second))
     .start
 
-  println(s">>> [$appName] Started")
+  println(s"DONE")
   println(s">>> [$appName] You should soon see Batch: 0 in the console")
 
   sq.awaitTermination()
