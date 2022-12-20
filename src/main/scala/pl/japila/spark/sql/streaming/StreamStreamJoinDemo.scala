@@ -7,13 +7,9 @@ object StreamStreamJoinDemo extends App {
 
   import org.apache.spark.sql.SparkSession
   val spark = SparkSession.builder().master("local[*]").getOrCreate()
-
   import spark.implicits._
 
-  val numShufflePartitions = 1
-  import org.apache.spark.sql.internal.SQLConf.SHUFFLE_PARTITIONS
-  spark.sessionState.conf.setConf(SHUFFLE_PARTITIONS, numShufflePartitions)
-  assert(spark.sessionState.conf.numShufflePartitions == numShufflePartitions)
+  oneShufflePartition(spark)
 
   val options = Map(
     "kafka.bootstrap.servers" -> ":9092"
