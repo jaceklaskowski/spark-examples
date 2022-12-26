@@ -8,12 +8,17 @@ package pl.japila.spark.sql.streaming
 object AggregationDemo extends App {
 
   val appName = "Demo: Streaming Aggregation"
-  print(s">>> [$appName] Starting up...")
+  println(s">>> [$appName] Starting up...")
 
   import org.apache.spark.sql.SparkSession
   val spark = SparkSession.builder().master("local[*]").getOrCreate()
 
-  oneShufflePartition(spark)
+  singleStateStore(spark)
+
+  // FIXME Consider JSON format for values
+  // JSONified values would make more sense.
+  // It'd certainly make the demo more verbose (extra JSON-specific "things")
+  // but would likely ease building a connection between events on the command line and their DataFrame representation.
 
   import spark.implicits._
   import org.apache.spark.sql.functions._
@@ -58,8 +63,8 @@ object AggregationDemo extends App {
     .trigger(Trigger.ProcessingTime(1.seconds))
     .start
 
-  println(s"DONE")
-  println(s">>> [$appName] You should soon see Batch: 0 in the console")
+  println(s">>> [$appName] Started")
+  println(s">>> [$appName] You should see Batch: 0 in the console soon")
 
   sq.awaitTermination()
 }
