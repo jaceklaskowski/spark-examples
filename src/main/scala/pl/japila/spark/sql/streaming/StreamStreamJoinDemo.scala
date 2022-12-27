@@ -1,6 +1,7 @@
 package pl.japila.spark.sql.streaming
 
 import java.sql.Timestamp
+import java.time.LocalDateTime
 
 /**
  * @see https://books.japila.pl/spark-structured-streaming-internals/demo/stream-stream-inner-join
@@ -52,6 +53,15 @@ object StreamStreamJoinDemo extends App {
     .asInstanceOf[StreamingQueryWrapper]
     .streamingQuery
 
+  println(s"DONE")
+
+  print(s">>> [$appName] Sending out events...")
+  mpoks.addData {
+    MPok(0, Timestamp.valueOf(LocalDateTime.of(2022, 12, 1, 0, 0, 1)), aggregateId = 0)
+  }
+  parcels.addData {
+    Parcel(0, wasInMpok = true, mpokId = 0, parcelOriginTimestamp = Timestamp.valueOf(LocalDateTime.of(2022, 12, 1, 0, 0, 1)))
+  }
   println(s"DONE")
 
   sq.processAllAvailable()
