@@ -28,6 +28,7 @@ object ReplaySparkEvents extends App {
   TimeUnit.DAYS.sleep(1)
 
   def replaySparkEvents(pathToEventLogs: String)(implicit spark: SparkSession): Unit = {
+    println(s"Replaying events from $pathToEventLogs")
     val eventLogFiles = new File(pathToEventLogs)
       .listFiles()
       .toSeq
@@ -42,6 +43,7 @@ object ReplaySparkEvents extends App {
     val inOrder = eventLogFiles.tail ++ Seq(eventLogFiles.head)
 
     val lineIterator = inOrder.iterator.map { file =>
+      println(s"Processing $file")
       val path = new Path(file)
       val fs = path.getFileSystem(spark.sessionState.newHadoopConf())
       val fileStream = fs.open(path)
@@ -50,13 +52,12 @@ object ReplaySparkEvents extends App {
       } else {
         fileStream
       }
-      println(s"Processing $file")
       val lines = IOUtils.readLines(stream, Charset.forName("utf-8"))
       (stream, lines)
     }
 
     import scala.jdk.CollectionConverters._
-    val lines = lineIterator.iterator.flatMap { p => p._2.asScala }
+    val lines = lineIterator.flatMap { p => p._2.asScala }
     val streams = lineIterator.map(_._1)
 
     val unrecognizedEvents = new scala.collection.mutable.HashSet[String]
