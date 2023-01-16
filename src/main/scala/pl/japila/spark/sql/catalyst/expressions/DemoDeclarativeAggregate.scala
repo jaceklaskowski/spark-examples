@@ -4,7 +4,7 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.DeclarativeAggregate
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, CreateStruct, Expression, Literal}
 import org.apache.spark.sql.types.{DataType, LongType, StructField, StructType}
 
-case class DemoDeclarativeAggregate(children: Seq[Expression], numElements: Int = 1)
+case class DemoDeclarativeAggregate(children: Seq[Expression], numElements: Int = 1, isStruct: Boolean = true)
   extends DeclarativeAggregate {
 
   // All vals are initialized when DemoDeclarativeAggregate is created
@@ -14,31 +14,50 @@ case class DemoDeclarativeAggregate(children: Seq[Expression], numElements: Int 
 
   private val _nullable = false
 
-  val dataType = StructType(
-    StructField("id", LongType, nullable = false) ::
-    Nil
-  )
+  val dataType: DataType = if (isStruct) {
+    StructType(
+      StructField("id", LongType, nullable = false) :: Nil
+    )
+  } else {
+    LongType
+  }
   protected lazy val registry = AttributeReference("registry", dataType, nullable = _nullable)()
 
   override val initialValues: Seq[Expression] = {
     println(">>> initialValues")
     import org.apache.spark.sql.functions._
-    /* registry = */ CreateStruct.create(Literal(0L) :: Nil) :: Nil
+    /* registry = */ if (isStruct) {
+      CreateStruct.create(Literal(0L) :: Nil) :: Nil
+    } else {
+      Literal(0L) :: Nil
+    }
   }
 
   override val updateExpressions: Seq[Expression] = {
     println(">>> updateExpressions")
-    /* registry = */ CreateStruct.create(Literal(1L) :: Nil) :: Nil
+    /* registry = */ if (isStruct) {
+      CreateStruct.create(Literal(1L) :: Nil) :: Nil
+    } else {
+      Literal(1L) :: Nil
+    }
   }
 
   override val mergeExpressions: Seq[Expression] = {
     println(">>> mergeExpressions")
-    /* registry = */ CreateStruct.create(Literal(2L) :: Nil) :: Nil
+    /* registry = */ if (isStruct) {
+      CreateStruct.create(Literal(2L) :: Nil) :: Nil
+    } else {
+      Literal(2L) :: Nil
+    }
   }
 
   override val evaluateExpression: Expression = {
     println(">>> evaluateExpression")
-    /* registry = */ CreateStruct.create(Literal(3L) :: Nil)
+    /* registry = */ if (isStruct) {
+      CreateStruct.create(Literal(3L) :: Nil)
+    } else {
+      Literal(3L)
+    }
   }
   override def aggBufferAttributes: Seq[AttributeReference] = {
     println(s">>> aggBufferAttributes: $registry")
