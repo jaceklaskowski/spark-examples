@@ -11,14 +11,22 @@ object DemoDeclarativeAggregateTest extends App {
     .getOrCreate()
   import spark.implicits._
 
-  // Disable AQE since this is to test Streaming Aggregation in the end
-  // SSS does not support AQE
   import org.apache.spark.sql.internal.SQLConf
+
+  // Disable AQE since this should also demo a Streaming Aggregation
+  // Spark Structured Streaming does not support AQE and so should the demo
   spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, false)
 
-  // That's why Spark SQL comes with higher-level standard functions
-  // so you don't even face such unpleasant moments
-  // In Scala, there is 'implicit class' feature
+  // Let's fix the number of partitions
+  val numPartitions = 2
+  spark.conf.set(SQLConf.SHUFFLE_PARTITIONS.key, numPartitions)
+
+  // Spark SQL comes with higher-level standard functions
+  // to hide DeclarativeAggregates like our DemoDeclarativeAggregate
+  // so you don't even face such potentially "unpleasant" coding moments
+  // The demo could use Scala's 'implicit class' feature
+  // but it does not
+  // yet?
 
   // With Struct data type for an aggregation buffer
   // and hence SortAggregate
@@ -31,7 +39,7 @@ object DemoDeclarativeAggregateTest extends App {
     val q = spark
       // Using 2 partitions to include Exchange in the query plan
       // Otherwise, Spark would place two SortAggregate's one after another
-      .range(start = 0, end = 5, step = 1, numPartitions = 2)
+      .range(start = 0, end = 5, step = 1, numPartitions)
       .withColumn("gid", $"id" % 2)
       .groupBy($"gid")
       .agg(demo_agg)
@@ -62,7 +70,7 @@ object DemoDeclarativeAggregateTest extends App {
     val demo_agg = new Column(demoDA)
 
     val q = spark
-      .range(start = 0, end = 5, step = 1, numPartitions = 2)
+      .range(start = 0, end = 5, step = 1, numPartitions)
       .withColumn("gid", $"id" % 2)
       .groupBy($"gid")
       .agg(demo_agg)
