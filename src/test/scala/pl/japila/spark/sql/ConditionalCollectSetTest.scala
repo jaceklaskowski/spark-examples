@@ -1,6 +1,9 @@
 package pl.japila.spark.sql
 
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.catalyst.expressions.CaseWhen
+
+import scala.reflect.internal.util.TableDef.Column
 
 object ConditionalCollectSetTest extends App {
 
@@ -16,16 +19,44 @@ object ConditionalCollectSetTest extends App {
 
   case class Status(status: String, date: String)
   case class Parcel(code: String, statuses: Seq[Status])
-  val parcelStatuses = Seq(
-    Parcel(code = "001", statuses = Seq(
-      Status(status = "PDD", date = "2022-12-06 12:00"))
-    )
-  ).toDF
   val emptyState = Seq
     .empty[(String, String, Boolean, Boolean, Boolean)]
     .toDF("code", "date", "pdd", "currently_pdd", "dor")
 
-  batch1(parcelStatuses, emptyState).show(truncate = false)
+  val stateBatch1 = {
+    val parcelStatuses = Seq(
+      Parcel(code = "001", statuses = Seq(
+        Status(status = "PDD", date = "2022-12-06 12:00"))
+      )
+    ).toDF
+    microBatch(parcelStatuses, emptyState)
+  }
+  println("After Batch 1:")
+  stateBatch1.show(truncate = false)
+
+  val stateBatch2 = {
+    val parcelStatuses = Seq(
+      Parcel(code = "001", statuses = Seq(
+        Status(status = "PDD", date = "2022-12-06 12:00"),
+        Status(status = "DOR", date = "2022-12-06 13:00")
+      ))
+    ).toDF
+    microBatch(parcelStatuses, stateBatch1)
+  }
+  println("After Batch 2:")
+  stateBatch2.show(truncate = false)
+
+  println("Solution:")
+  import org.apache.spark.sql.functions._
+  val solution = stateBatch2
+    .groupBy("code")
+    .agg(
+      last("pdd") as "pdd", // FIXME assumes proper order so most likely incorrect
+      last("currently_pdd") as "currently_pdd", // FIXME assumes proper order so most likely incorrect
+      // if ever delivered, it's delivered and cannot be "resurrected" as "pdd" or "currently_pdd"
+      exists(collect_set("dor"), identity) as "dor",
+    )
+  solution.show(truncate = false)
 
   println(">>> Pausing the current thread for 1 day")
   println(s">>> web UI available at ${spark.sparkContext.uiWebUrl.get}/SQL/")
@@ -39,7 +70,7 @@ object ConditionalCollectSetTest extends App {
    *    - currently_pdd
    *    - dor
    */
-  def batch1(batchDF: DataFrame, state: DataFrame): DataFrame = {
+  def microBatch(batchDF: DataFrame, state: DataFrame): DataFrame = {
     println("parcelStatuses:")
     batchDF.show(truncate = false)
 
@@ -54,25 +85,20 @@ object ConditionalCollectSetTest extends App {
     println("exploded:")
     exploded.show(truncate = false)
 
-    val joined = exploded.join(state, Seq("code"), "left")
+    exploded.join(state, Seq("code"), "left")
       .na.fill(false, Seq("pdd", "currently_pdd", "dor"))
       .select(
         $"code",
         exploded("date"),
-        when($"status" === "PDD" && !$"pdd", true) as "pdd",
-        when($"status" === "PDD" && !$"currently_pdd", true) as "currently_pdd",
-        $"dor"
-      )
-    joined.cache().count()
-    println("joined (cached):")
-    joined.show(truncate = false)
-
-    joined
-      .groupBy("date")
-      .agg(
-        collect_set(struct("code", "pdd")) as "pdds",
-        collect_set(struct("code", "currently_pdd")) as "currently_pdds",
-        collect_set(struct("code", "dor")) as "dors",
+        expr(
+          """
+            |CASE
+            |   WHEN (status = 'PDD' AND !pdd) THEN true -- turn it on
+            |   ELSE pdd                                 -- keep the current pdd state
+            |END
+            |""".stripMargin) as "pdd",
+        ($"status" === "PDD" && !$"currently_pdd") as "currently_pdd",
+        ($"status" === "DOR") as "dor"
       )
   }
 }
