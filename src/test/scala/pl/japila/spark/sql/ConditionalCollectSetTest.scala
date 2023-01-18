@@ -21,7 +21,9 @@ object ConditionalCollectSetTest extends App {
       Status(status = "PDD", date = "2022-12-06 12:00"))
     )
   ).toDF
-  val emptyState = Seq.empty[(String, String, String, String)].toDF("date", "pdd", "currently_pdd", "dor")
+  val emptyState = Seq
+    .empty[(String, String, Boolean, Boolean, Boolean)]
+    .toDF("code", "date", "pdd", "currently_pdd", "dor")
 
   batch1(parcelStatuses, emptyState).show(truncate = false)
 
@@ -45,18 +47,32 @@ object ConditionalCollectSetTest extends App {
     state.show(truncate = false)
 
     import org.apache.spark.sql.functions._
-    val flattend = batchDF
-      .withColumn("flattend", explode($"statuses"))
-      .select("code", "flattend.*")
+    val exploded = batchDF
+      .withColumn("exploded", explode($"statuses"))
+      .select("code", "exploded.*")
 
-    println("flattend:")
-    flattend.show(truncate = false)
+    println("exploded:")
+    exploded.show(truncate = false)
 
-    flattend.groupBy("date")
+    val joined = exploded.join(state, Seq("code"), "left")
+      .na.fill(false, Seq("pdd", "currently_pdd", "dor"))
+      .select(
+        $"code",
+        exploded("date"),
+        when($"status" === "PDD" && !$"pdd", true) as "pdd",
+        when($"status" === "PDD" && !$"currently_pdd", true) as "currently_pdd",
+        $"dor"
+      )
+    joined.cache().count()
+    println("joined (cached):")
+    joined.show(truncate = false)
+
+    joined
+      .groupBy("date")
       .agg(
-        collect_set("code") as "pdd",
-        collect_set("code") as "currently_pdd",
-        collect_set("code") as "dor",
+        collect_set(struct("code", "pdd")) as "pdds",
+        collect_set(struct("code", "currently_pdd")) as "currently_pdds",
+        collect_set(struct("code", "dor")) as "dors",
       )
   }
 }
