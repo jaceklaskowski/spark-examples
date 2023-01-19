@@ -46,9 +46,22 @@ object ConditionalCollectSetTest extends App {
   println("After Batch 2:")
   stateBatch2.show(truncate = false)
 
+  val stateBatch3 = {
+    val parcelStatuses = Seq(
+      Parcel(code = "002", statuses = Seq(
+        Status(status = "PDD", date = "2022-12-06 12:00")
+      ))
+    ).toDF
+    microBatch(parcelStatuses, stateBatch2)
+  }
+  println("After Batch 3:")
+  stateBatch3.show(truncate = false)
+
+  val lastBatch = stateBatch3
+
   println("Solution:")
   import org.apache.spark.sql.functions._
-  val solution = stateBatch2
+  val solution = lastBatch
     .groupBy("code")
     .agg(
       last("pdd") as "pdd", // FIXME assumes proper order so most likely incorrect
@@ -70,22 +83,24 @@ object ConditionalCollectSetTest extends App {
    *    - currently_pdd
    *    - dor
    */
-  def microBatch(batchDF: DataFrame, state: DataFrame): DataFrame = {
-    println("parcelStatuses:")
-    batchDF.show(truncate = false)
+  def microBatch(parcelStatuses: DataFrame, state: DataFrame): DataFrame = {
 
     println("state:")
     state.show(truncate = false)
 
     import org.apache.spark.sql.functions._
-    val exploded = batchDF
+    val exploded = parcelStatuses
       .withColumn("exploded", explode($"statuses"))
       .select("code", "exploded.*")
 
-    println("exploded:")
+    println("parcelStatuses exploded:")
     exploded.show(truncate = false)
 
-    exploded.join(state, Seq("code"), "left")
+    val joined = exploded.join(state, Seq("code"), "left")
+    println("joined:")
+    joined.show(truncate = false)
+
+    val filled = joined
       .na.fill(false, Seq("pdd", "currently_pdd", "dor"))
       .select(
         $"code",
@@ -97,8 +112,32 @@ object ConditionalCollectSetTest extends App {
             |   ELSE pdd                                 -- keep the current pdd state
             |END
             |""".stripMargin) as "pdd",
-        ($"status" === "PDD" && !$"currently_pdd") as "currently_pdd",
+        expr(
+          """
+            |CASE
+            |   WHEN (status = 'PDD' AND !currently_pdd) THEN true -- PDD turns CURR_PDD on
+            |   WHEN (status = 'DOR' AND currently_pdd) THEN false -- DOR turns CURR_PDD off
+            |   ELSE currently_pdd                                 -- keep the current pdd state
+            |END
+            |""".stripMargin) as "currently_pdd",
         ($"status" === "DOR") as "dor"
       )
+    println("filled:")
+    filled.show(truncate = false)
+
+    val unmodified_codes = state
+      .join(parcelStatuses, Seq("code"), "left_anti")
+      .select(state.columns.map(col): _*)
+
+    filled
+      .orderBy($"code", $"date".asc)
+      .groupBy("code")
+      .agg(
+        last("date") as "date",
+        last("pdd") as "pdd",
+        last("currently_pdd") as "currently_pdd",
+        last("dor") as "dor",
+      )
+      .unionByName(unmodified_codes)
   }
 }
